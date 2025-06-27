@@ -9,7 +9,7 @@ interface LoginFormProps {
 const LoginForm: React.FC<LoginFormProps> = ({ onToggleForm }) => {
     const { login } = useAuth();
     const [formData, setFormData] = useState({
-        email: '',
+        username: '',
         password: '',
     });
     const [showPassword, setShowPassword] = useState(false);
@@ -21,10 +21,18 @@ const LoginForm: React.FC<LoginFormProps> = ({ onToggleForm }) => {
         setLoading(true);
         setError('');
 
+        console.log('Attempting login with:', {
+            username: formData.username,
+            passwordLength: formData.password.length
+        });
+
         try {
-            await login(formData.email, formData.password);
-        } catch (err) {
-            setError('Invalid credentials. Please try again.');
+            await login(formData.username, formData.password);
+            console.log('Login successful');
+            // Successful login will be handled by the AuthContext
+        } catch (err: any) {
+            console.error('Login error:', err);
+            setError(err.message || 'An unexpected error occurred. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -32,11 +40,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onToggleForm }) => {
 
     const handleDemoLogin = (role: 'STUDENT' | 'COMPANY' | 'ADMIN') => {
         const demoCredentials = {
-            STUDENT: { email: 'john@student.com', password: 'password123' },
-            COMPANY: { email: 'hr@techcorp.com', password: 'password123' },
-            ADMIN: { email: 'admin@portal.com', password: 'admin123' },
+            STUDENT: { username: 'john_student', password: 'password123' },
+            COMPANY: { username: 'tech_corp', password: 'password123' },
+            ADMIN: { username: 'admin', password: 'admin123' },
         };
 
+        console.log(`Setting demo credentials for ${role}`);
         setFormData(demoCredentials[role]);
     };
 
@@ -60,14 +69,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onToggleForm }) => {
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Email Address
+                            Username
                         </label>
                         <input
-                            type="email"
-                            value={formData.email}
-                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                            type="text"
+                            value={formData.username}
+                            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                            placeholder="Enter your email"
+                            placeholder="Enter your username"
                             required
                         />
                     </div>
