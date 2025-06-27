@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Plus,
     Eye,
@@ -8,175 +8,323 @@ import {
     CheckCircle,
     Clock
 } from 'lucide-react';
+import {
+    getMyInternships,
+    createInternship,
+    updateInternshipStatus,
+    deleteInternship,
+} from '../../api/internships';
+import type { InternshipPostRequest } from '../../api/internships';
+import {
+    getReceivedApplications,
+    getApplicationsForInternship,
+    updateApplicationStatus
+} from '../../api/applications';
+
+interface Internship {
+    id: number;
+    title: string;
+    description: string;
+    location: string;
+    requirements: string;
+    responsibilities: string;
+    salary?: string;
+    startDate?: string;
+    endDate?: string;
+    applicationDeadline?: string;
+    status: 'DRAFT' | 'PUBLISHED' | 'CLOSED' | 'DELETED';
+    applicationsCount: number;
+}
+
+interface Application {
+    id: number;
+    studentName: string;
+    studentEmail: string;
+    appliedAt: string;
+    status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'WITHDRAWN';
+    coverLetter?: string;
+    resumeUrl?: string;
+}
 
 const CompanyDashboard: React.FC = () => {
-    const stats = [
-        {
-            title: 'Active Posts',
-            value: '12',
-            icon: FileText,
-            color: 'bg-blue-500',
-            trend: '+3 this month'
-        },
-        {
-            title: 'Total Applications',
-            value: '247',
-            icon: Users,
-            color: 'bg-green-500',
-            trend: '+45 this week'
-        },
-        {
-            title: 'Pending Reviews',
-            value: '89',
-            icon: Clock,
-            color: 'bg-yellow-500',
-            trend: 'Needs attention'
-        },
-        {
-            title: 'Hired Interns',
-            value: '18',
-            icon: CheckCircle,
-            color: 'bg-emerald-500',
-            trend: 'This quarter'
-        },
-    ];
+    const [internships, setInternships] = useState<Internship[]>([]);
+    const [applications, setApplications] = useState<Application[]>([]);
+    const [selectedInternship, setSelectedInternship] = useState<Internship | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [isCreating, setIsCreating] = useState(false);
+    const [formData, setFormData] = useState<InternshipPostRequest>({
+        title: '',
+        description: '',
+        location: '',
+        requirements: '',
+        responsibilities: '',
+    });
 
-    const recentPosts = [
-        {
-            id: '1',
-            title: 'Software Development Intern',
-            applications: 45,
-            status: 'ACTIVE',
-            deadline: '2024-02-15',
-        },
-        {
-            id: '2',
-            title: 'Product Manager Intern',
-            applications: 32,
-            status: 'ACTIVE',
-            deadline: '2024-02-20',
-        },
-        {
-            id: '3',
-            title: 'UI/UX Design Intern',
-            applications: 78,
-            status: 'CLOSED',
-            deadline: '2024-01-30',
-        },
-    ];
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'ACTIVE':
-                return 'bg-green-100 text-green-800';
-            case 'CLOSED':
-                return 'bg-red-100 text-red-800';
-            case 'DRAFT':
-                return 'bg-yellow-100 text-yellow-800';
-            default:
-                return 'bg-gray-100 text-gray-800';
+    const loadInternships = async () => {
+        try {
+            setLoading(true);
+            const response = await getMyInternships();
+            setInternships(response.content);
+        } catch (err) {
+            setError('Failed to load internships');
+        } finally {
+            setLoading(false);
         }
     };
 
+    const loadApplications = async (internshipId?: number) => {
+        try {
+            const response = internshipId
+                ? await getApplicationsForInternship(internshipId, 0, 10)
+                : await getReceivedApplications();
+            setApplications(response.content);
+        } catch (err) {
+            setError('Failed to load applications');
+        }
+    };
+
+    useEffect(() => {
+        loadInternships();
+        loadApplications();
+    }, []);
+
+    const handleCreateInternship = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await createInternship(formData);
+            setIsCreating(false);
+            setFormData({
+                title: '',
+                description: '',
+                location: '',
+                requirements: '',
+                responsibilities: '',
+            });
+            loadInternships();
+        } catch (err) {
+            setError('Failed to create internship');
+        }
+    };
+
+    const handleStatusChange = async (internshipId: number, status: 'DRAFT' | 'PUBLISHED' | 'CLOSED') => {
+        try {
+            await updateInternshipStatus(internshipId, status);
+            loadInternships();
+        } catch (err) {
+            setError('Failed to update status');
+        }
+    };
+
+    const handleDeleteInternship = async (internshipId: number) => {
+        if (window.confirm('Are you sure you want to delete this internship?')) {
+            try {
+                await deleteInternship(internshipId);
+                loadInternships();
+            } catch (err) {
+                setError('Failed to delete internship');
+            }
+        }
+    };
+
+    const handleApplicationStatus = async (applicationId: number, status: 'ACCEPTED' | 'REJECTED') => {
+        try {
+            await updateApplicationStatus(applicationId, status);
+            loadApplications(selectedInternship?.id);
+        } catch (err) {
+            setError('Failed to update application status');
+        }
+    };
+
+    if (loading) return <div>Loading...</div>;
+    if (error) return <div className="text-red-500">{error}</div>;
+
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">Company Dashboard</h1>
-                    <p className="text-gray-600">Manage your internship posts and review applications</p>
-                </div>
-                <button className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                    <Plus className="w-5 h-5" />
-                    <span>Post New Internship</span>
+        <div className="container mx-auto p-4">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold">Company Dashboard</h1>
+                <button
+                    onClick={() => setIsCreating(true)}
+                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                    Post New Internship
                 </button>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => {
-                    const Icon = stat.icon;
-                    return (
-                        <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                                    <p className="text-3xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                                </div>
-                                <div className={`${stat.color} p-3 rounded-lg`}>
-                                    <Icon className="w-6 h-6 text-white" />
-                                </div>
+            {/* Create Internship Form */}
+            {isCreating && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                    <div className="bg-white p-6 rounded-lg max-w-2xl w-full">
+                        <h2 className="text-xl font-bold mb-4">Create New Internship</h2>
+                        <form onSubmit={handleCreateInternship} className="space-y-4">
+                            <div>
+                                <label className="block mb-1">Title</label>
+                                <input
+                                    type="text"
+                                    value={formData.title}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    className="w-full p-2 border rounded"
+                                    required
+                                />
                             </div>
-                            <div className="mt-4 flex items-center text-sm">
-                                <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
-                                <span className="text-green-600 font-medium">{stat.trend}</span>
+                            <div>
+                                <label className="block mb-1">Description</label>
+                                <textarea
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    className="w-full p-2 border rounded"
+                                    rows={4}
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block mb-1">Location</label>
+                                <input
+                                    type="text"
+                                    value={formData.location}
+                                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                    className="w-full p-2 border rounded"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block mb-1">Requirements</label>
+                                <textarea
+                                    value={formData.requirements}
+                                    onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
+                                    className="w-full p-2 border rounded"
+                                    rows={4}
+                                    required
+                                />
+                            </div>
+                                <div>
+                                <label className="block mb-1">Responsibilities</label>
+                                <textarea
+                                    value={formData.responsibilities}
+                                    onChange={(e) => setFormData({ ...formData, responsibilities: e.target.value })}
+                                    className="w-full p-2 border rounded"
+                                    rows={4}
+                                    required
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreating(false)}
+                                    className="px-4 py-2 border rounded"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                >
+                                    Create Internship
+                                </button>
+                            </div>
+                        </form>
+                                </div>
+                                </div>
+            )}
+
+            {/* Internships List */}
+            <div className="grid gap-6 mb-8">
+                {internships.map((internship) => (
+                    <div key={internship.id} className="border rounded-lg p-4 shadow">
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 className="text-xl font-bold">{internship.title}</h3>
+                                <p className="text-gray-600">{internship.location}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <select
+                                    value={internship.status}
+                                    onChange={(e) => handleStatusChange(internship.id, e.target.value as any)}
+                                    className="border rounded p-2"
+                                >
+                                    <option value="DRAFT">Draft</option>
+                                    <option value="PUBLISHED">Published</option>
+                                    <option value="CLOSED">Closed</option>
+                                </select>
+                                <button
+                                    onClick={() => handleDeleteInternship(internship.id)}
+                                    className="text-red-500 hover:text-red-700"
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </div>
-                    );
-                })}
+                        <p className="mb-4">{internship.description}</p>
+                        <button
+                            onClick={() => {
+                                setSelectedInternship(internship);
+                                loadApplications(internship.id);
+                            }}
+                            className="text-blue-500 hover:text-blue-700"
+                        >
+                            View {internship.applicationsCount} Applications
+                        </button>
+                    </div>
+                ))}
             </div>
 
-            {/* Recent Posts */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-semibold text-gray-900">Recent Internship Posts</h2>
-                    <p className="text-gray-600 mt-1">Monitor the performance of your latest posts</p>
+            {/* Applications List */}
+            {selectedInternship && (
+                <div className="mt-8">
+                    <h2 className="text-xl font-bold mb-4">
+                        Applications for {selectedInternship.title}
+                    </h2>
+                    <div className="grid gap-4">
+                        {applications.map((application) => (
+                            <div key={application.id} className="border rounded-lg p-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-bold">{application.studentName}</h4>
+                                        <p className="text-gray-600">{application.studentEmail}</p>
+                                        <p className="text-sm text-gray-500">
+                                            Applied: {new Date(application.appliedAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleApplicationStatus(application.id, 'ACCEPTED')}
+                                            className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                                            disabled={application.status !== 'PENDING'}
+                                        >
+                                            Accept
+                                        </button>
+                                        <button
+                                            onClick={() => handleApplicationStatus(application.id, 'REJECTED')}
+                                            className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                                            disabled={application.status !== 'PENDING'}
+                                        >
+                                            Reject
+                                        </button>
                 </div>
-                <div className="p-6">
-                    <div className="space-y-4">
-                        {recentPosts.map((post) => (
-                            <div key={post.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-900">{post.title}</h3>
-                                    <p className="text-gray-600">{post.applications} applications received</p>
-                                    <p className="text-sm text-gray-500 mt-1">Deadline: {post.deadline}</p>
                                 </div>
-                                <div className="flex items-center space-x-3">
-                                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(post.status)}`}>
-                                        {post.status}
-                                    </span>
-                                    <button className="flex items-center space-x-1 text-blue-600 hover:text-blue-700">
-                                        <Eye className="w-4 h-4" />
-                                        <span>View</span>
-                                    </button>
+                                {application.coverLetter && (
+                                    <div className="mt-2">
+                                        <p className="font-medium">Cover Letter:</p>
+                                        <p className="text-gray-700">{application.coverLetter}</p>
+                                    </div>
+                                )}
+                                {application.resumeUrl && (
+                                    <div className="mt-2">
+                                        <a
+                                            href={application.resumeUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-500 hover:text-blue-700"
+                                        >
+                                            View Resume
+                                        </a>
                                 </div>
+                                )}
                             </div>
                         ))}
                     </div>
-                    <div className="mt-6 text-center">
-                        <button className="text-blue-600 hover:text-blue-700 font-medium">
-                            View All Posts →
-                        </button>
-                    </div>
                 </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                    <Plus className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Post New Internship</h3>
-                    <p className="text-blue-100 text-sm mb-4">Create a new internship opportunity</p>
-                    <button className="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors">
-                        Get Started
-                    </button>
-                </div>
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white">
-                    <Users className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Review Applications</h3>
-                    <p className="text-green-100 text-sm mb-4">89 applications waiting for review</p>
-                    <button className="bg-white text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-green-50 transition-colors">
-                        Review Now
-                    </button>
-                </div>
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white">
-                    <TrendingUp className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Analytics</h3>
-                    <p className="text-purple-100 text-sm mb-4">View detailed performance metrics</p>
-                    <button className="bg-white text-purple-600 px-4 py-2 rounded-lg font-medium hover:bg-purple-50 transition-colors">
-                        View Reports
-                    </button>
-                </div>
-            </div>
+            )}
         </div>
     );
 };

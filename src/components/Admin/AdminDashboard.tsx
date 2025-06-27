@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Users,
     Building,
@@ -9,8 +9,104 @@ import {
     CheckCircle,
     Activity
 } from 'lucide-react';
+import {
+    getAllUsers,
+    getUserById,
+    toggleUserStatus,
+    deleteUser,
+    type UserProfile
+} from '../../api/users';
+import {
+    getAllInternships,
+    adminUpdateInternshipStatus
+} from '../../api/internships';
+
+interface Internship {
+    id: number;
+    title: string;
+    companyName: string;
+    location: string;
+    status: 'DRAFT' | 'PUBLISHED' | 'CLOSED' | 'DELETED';
+    createdAt: string;
+}
 
 const AdminDashboard: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<'users' | 'internships'>('users');
+    const [users, setUsers] = useState<UserProfile[]>([]);
+    const [internships, setInternships] = useState<Internship[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [selectedRole, setSelectedRole] = useState<'STUDENT' | 'COMPANY' | 'ADMIN' | ''>('');
+    const [search, setSearch] = useState('');
+
+    const loadUsers = async () => {
+        try {
+            setLoading(true);
+            const response = await getAllUsers(page, 10, selectedRole || undefined, search);
+            setUsers(response.content);
+            setTotalPages(response.totalPages);
+        } catch (err) {
+            setError('Failed to load users');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadInternships = async () => {
+        try {
+            setLoading(true);
+            const response = await getAllInternships(page, 10);
+            setInternships(response.content);
+            setTotalPages(response.totalPages);
+        } catch (err) {
+            setError('Failed to load internships');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'users') {
+            loadUsers();
+        } else {
+            loadInternships();
+        }
+    }, [activeTab, page, selectedRole, search]);
+
+    const handleToggleUserStatus = async (userId: number, enabled: boolean) => {
+        try {
+            await toggleUserStatus(userId, enabled);
+            loadUsers();
+        } catch (err) {
+            setError('Failed to update user status');
+        }
+    };
+
+    const handleDeleteUser = async (userId: number) => {
+        if (window.confirm('Are you sure you want to delete this user?')) {
+            try {
+                await deleteUser(userId);
+                loadUsers();
+            } catch (err) {
+                setError('Failed to delete user');
+            }
+        }
+    };
+
+    const handleUpdateInternshipStatus = async (
+        internshipId: number,
+        status: 'DRAFT' | 'PUBLISHED' | 'CLOSED' | 'DELETED'
+    ) => {
+        try {
+            await adminUpdateInternshipStatus(internshipId, status);
+            loadInternships();
+        } catch (err) {
+            setError('Failed to update internship status');
+        }
+    };
+
     const stats = [
         {
             title: 'Total Users',
@@ -142,144 +238,158 @@ const AdminDashboard: React.FC = () => {
         }
     };
 
+    if (loading) return <div>Loading...</div>;
+    if (error) return <div className="text-red-500">{error}</div>;
+
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
-                    <p className="text-gray-600">System overview and administrative controls</p>
-                </div>
-                <div className="flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg">
-                    <Shield className="w-5 h-5" />
-                    <span className="font-medium">Admin Access</span>
-                </div>
+        <div className="container mx-auto p-4">
+            <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+
+            {/* Tabs */}
+            <div className="flex gap-4 mb-6">
+                <button
+                    onClick={() => setActiveTab('users')}
+                    className={`px-4 py-2 rounded ${
+                        activeTab === 'users'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 text-gray-700'
+                    }`}
+                >
+                    Manage Users
+                </button>
+                <button
+                    onClick={() => setActiveTab('internships')}
+                    className={`px-4 py-2 rounded ${
+                        activeTab === 'internships'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 text-gray-700'
+                    }`}
+                >
+                    Manage Internships
+                </button>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => {
-                    const Icon = stat.icon;
-                    return (
-                        <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                                    <p className="text-3xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                                </div>
-                                <div className={`${stat.color} p-3 rounded-lg`}>
-                                    <Icon className="w-6 h-6 text-white" />
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <div className="flex items-center text-sm">
-                                    <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
-                                    <span className="text-green-600 font-medium">{stat.trend}</span>
-                                </div>
-                                <p className="text-xs text-gray-500">{stat.breakdown}</p>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+            {activeTab === 'users' ? (
+                <>
+                    {/* User Filters */}
+                    <div className="flex gap-4 mb-6">
+                        <input
+                            type="text"
+                            placeholder="Search users..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="p-2 border rounded"
+                        />
+                        <select
+                            value={selectedRole}
+                            onChange={(e) => setSelectedRole(e.target.value as any)}
+                            className="p-2 border rounded"
+                        >
+                            <option value="">All Roles</option>
+                            <option value="STUDENT">Students</option>
+                            <option value="COMPANY">Companies</option>
+                            <option value="ADMIN">Admins</option>
+                        </select>
+                    </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Recent Activity */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                    <div className="p-6 border-b border-gray-200">
-                        <h2 className="text-xl font-semibold text-gray-900">Recent Activity</h2>
-                        <p className="text-gray-600 mt-1">System events and user actions</p>
-                    </div>
-                    <div className="p-6">
-                        <div className="space-y-4">
-                            {recentActivity.map((activity) => (
-                                <div key={activity.id} className="flex items-start space-x-3">
-                                    <div className={`p-2 rounded-lg ${getActivityColor(activity.status)}`}>
-                                        {getActivityIcon(activity.type)}
+                    {/* Users List */}
+                    <div className="grid gap-4">
+                        {users.map((user) => (
+                            <div key={user.id} className="border rounded-lg p-4 shadow">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold">{user.fullName}</h3>
+                                        <p className="text-gray-600">{user.email}</p>
+                                        <p className="text-sm text-gray-500">Role: {user.role}</p>
+                                        {user.role === 'STUDENT' && (
+                                            <p className="text-sm text-gray-500">
+                                                {user.university} - {user.major}
+                                            </p>
+                                        )}
+                                        {user.role === 'COMPANY' && (
+                                            <p className="text-sm text-gray-500">
+                                                {user.companyName} - {user.industry}
+                                            </p>
+                                        )}
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-gray-900">{activity.message}</p>
-                                        <p className="text-xs text-gray-500 mt-1">{activity.timestamp}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="mt-6 text-center">
-                            <button className="text-blue-600 hover:text-blue-700 font-medium">
-                                View All Activity →
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Pending Reviews */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                    <div className="p-6 border-b border-gray-200">
-                        <h2 className="text-xl font-semibold text-gray-900">Pending Reviews</h2>
-                        <p className="text-gray-600 mt-1">Items requiring administrative attention</p>
-                    </div>
-                    <div className="p-6">
-                        <div className="space-y-4">
-                            {pendingReviews.map((review) => (
-                                <div key={review.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                    <div className="flex-1">
-                                        <h3 className="font-medium text-gray-900">{review.type}</h3>
-                                        <p className="text-gray-600">{review.company}</p>
-                                        <p className="text-sm text-gray-500 mt-1">Submitted: {review.submitted}</p>
-                                    </div>
-                                    <div className="flex items-center space-x-3">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(review.priority)}`}>
-                                            {review.priority}
-                                        </span>
-                                        <button className="text-blue-600 hover:text-blue-700 font-medium">
-                                            Review
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleToggleUserStatus(user.id, !user.enabled)}
+                                            className={`px-3 py-1 rounded ${
+                                                user.enabled
+                                                    ? 'bg-red-500 text-white'
+                                                    : 'bg-green-500 text-white'
+                                            }`}
+                                        >
+                                            {user.enabled ? 'Disable' : 'Enable'}
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteUser(user.id)}
+                                            className="px-3 py-1 bg-red-500 text-white rounded"
+                                        >
+                                            Delete
                                         </button>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                        <div className="mt-6 text-center">
-                            <button className="text-blue-600 hover:text-blue-700 font-medium">
-                                View All Reviews →
-                            </button>
-                        </div>
+                            </div>
+                        ))}
                     </div>
-                </div>
-            </div>
+                </>
+            ) : (
+                <>
+                    {/* Internships List */}
+                    <div className="grid gap-4">
+                        {internships.map((internship) => (
+                            <div key={internship.id} className="border rounded-lg p-4 shadow">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold">{internship.title}</h3>
+                                        <p className="text-gray-600">{internship.companyName}</p>
+                                        <p className="text-gray-500">{internship.location}</p>
+                                        <p className="text-sm text-gray-500">
+                                            Created: {new Date(internship.createdAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <select
+                                            value={internship.status}
+                                            onChange={(e) =>
+                                                handleUpdateInternshipStatus(
+                                                    internship.id,
+                                                    e.target.value as any
+                                                )
+                                            }
+                                            className="p-2 border rounded"
+                                        >
+                                            <option value="DRAFT">Draft</option>
+                                            <option value="PUBLISHED">Published</option>
+                                            <option value="CLOSED">Closed</option>
+                                            <option value="DELETED">Deleted</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                    <Users className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Manage Users</h3>
-                    <p className="text-blue-100 text-sm mb-4">View and moderate user accounts</p>
-                    <button className="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors">
-                        Open Panel
-                    </button>
-                </div>
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white">
-                    <Building className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Internships</h3>
-                    <p className="text-green-100 text-sm mb-4">Monitor and moderate posts</p>
-                    <button className="bg-white text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-green-50 transition-colors">
-                        View All
-                    </button>
-                </div>
-                <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl p-6 text-white">
-                    <FileText className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Reports</h3>
-                    <p className="text-yellow-100 text-sm mb-4">Generate system reports</p>
-                    <button className="bg-white text-yellow-600 px-4 py-2 rounded-lg font-medium hover:bg-yellow-50 transition-colors">
-                        Generate
-                    </button>
-                </div>
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white">
-                    <Shield className="w-8 h-8 mb-3" />
-                    <h3 className="text-lg font-semibold mb-2">Security</h3>
-                    <p className="text-purple-100 text-sm mb-4">Monitor system security</p>
-                    <button className="bg-white text-purple-600 px-4 py-2 rounded-lg font-medium hover:bg-purple-50 transition-colors">
-                        Check Status
-                    </button>
-                </div>
+            {/* Pagination */}
+            <div className="mt-6 flex justify-center gap-2">
+                <button
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-4 py-2 border rounded disabled:opacity-50"
+                >
+                    Previous
+                </button>
+                <button
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={page >= totalPages - 1}
+                    className="px-4 py-2 border rounded disabled:opacity-50"
+                >
+                    Next
+                </button>
             </div>
         </div>
     );

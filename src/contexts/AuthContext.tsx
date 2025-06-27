@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import type { AuthState, User } from '../types';
+import type { RegisterPayload, LoginResponse, RegisterResponse } from '../api/auth';
+import { loginApi, registerApi, logout as logoutApi } from '../api/auth';
 
 interface AuthContextType extends AuthState {
-    login: (email: string, password: string) => Promise<void>;
-    register: (userData: any) => Promise<void>;
+    login: (username: string, password: string) => Promise<void>;
+    register: (userData: RegisterPayload) => Promise<RegisterResponse>;
     logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 type AuthAction =
-    | { type: 'LOGIN_SUCCESS'; payload: { user: User; token: string } }
+    | { type: 'LOGIN_SUCCESS'; payload: LoginResponse }
     | { type: 'LOGOUT' }
     | { type: 'SET_LOADING'; payload: boolean };
 
@@ -18,13 +20,18 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
     switch (action.type) {
         case 'LOGIN_SUCCESS':
             return {
-                user: action.payload.user,
+                user: {
+                    id: String(action.payload.id),
+                    username: action.payload.username,
+                    email: action.payload.email,
+                    fullName: action.payload.fullName,
+                    role: action.payload.role,
+                    createdAt: new Date().toISOString(),
+                },
                 token: action.payload.token,
                 isAuthenticated: true,
             };
         case 'LOGOUT':
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
             return {
                 user: null,
                 token: null,
@@ -35,43 +42,6 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
     }
 };
 
-// Mock users for demo
-const mockUsers = [
-    {
-        id: '1',
-        username: 'john_student',
-        email: 'john@student.com',
-        password: 'password123',
-        role: 'STUDENT' as const,
-        fullName: 'John Smith',
-        university: 'MIT',
-        major: 'Computer Science',
-        graduationYear: 2025,
-        createdAt: '2024-01-01T00:00:00Z',
-    },
-    {
-        id: '2',
-        username: 'tech_corp',
-        email: 'hr@techcorp.com',
-        password: 'password123',
-        role: 'COMPANY' as const,
-        fullName: 'TechCorp HR',
-        companyName: 'TechCorp Solutions',
-        industry: 'Technology',
-        website: 'https://techcorp.com',
-        createdAt: '2024-01-01T00:00:00Z',
-    },
-    {
-        id: '3',
-        username: 'admin',
-        email: 'admin@portal.com',
-        password: 'admin123',
-        role: 'ADMIN' as const,
-        fullName: 'System Administrator',
-        createdAt: '2024-01-01T00:00:00Z',
-    },
-];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, {
         user: null,
@@ -80,56 +50,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        const user = localStorage.getItem('user');
-        if (token && user) {
+        // Check for stored auth state on mount
+        const token = localStorage.getItem('jwt_token');
+        const userStr = localStorage.getItem('user');
+        if (token && userStr) {
+            try {
+                const user = JSON.parse(userStr);
             dispatch({
                 type: 'LOGIN_SUCCESS',
-                payload: { user: JSON.parse(user), token },
+                    payload: { ...user, token },
             });
+            } catch (error) {
+                // If there's an error parsing the stored user data, clear it
+                localStorage.removeItem('jwt_token');
+                localStorage.removeItem('user');
+            }
         }
     }, []);
 
-    const login = async (email: string, password: string) => {
-        // Mock authentication
-        const user = mockUsers.find(u => u.email === email && u.password === password);
-        if (!user) {
-            throw new Error('Invalid credentials');
+    const login = async (username: string, password: string) => {
+        try {
+            const response = await loginApi(username, password);
+            
+            // Store both token and user data
+            localStorage.setItem('jwt_token', response.token);
+            localStorage.setItem('user', JSON.stringify({
+                id: response.id,
+                username: response.username,
+                email: response.email,
+                fullName: response.fullName,
+                role: response.role
+            }));
+            
+            dispatch({ type: 'LOGIN_SUCCESS', payload: response });
+        } catch (error) {
+            // Clear any potentially inconsistent storage state
+            localStorage.removeItem('jwt_token');
+            localStorage.removeItem('user');
+            throw error;
         }
-
-        const token = 'mock-jwt-token-' + user.id;
-        const { password: _, ...userWithoutPassword } = user;
-
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(userWithoutPassword));
-
-        dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: { user: userWithoutPassword, token },
-        });
     };
 
-    const register = async (userData: any) => {
-        // Mock registration
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const newUser = {
-            id: Date.now().toString(),
-            ...userData,
-            createdAt: new Date().toISOString(),
-        };
-
-        const token = 'mock-jwt-token-' + newUser.id;
-
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(newUser));
-
-        dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: { user: newUser, token },
-        });
+    const register = async (userData: RegisterPayload) => {
+        const response = await registerApi(userData);
+        // After successful registration, log the user in
+        await login(userData.username, userData.password);
+        return response;
     };
 
     const logout = () => {
+        logoutApi(); // This will remove the JWT token
+        localStorage.removeItem('user');
         dispatch({ type: 'LOGOUT' });
     };
 
