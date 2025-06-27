@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (userData: any) => Promise<void>;
+  logout: () => void;
   user: any | null;
 }
 
@@ -22,8 +23,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(userData);
   };
 
+  const logout = () => {
+    setUser(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, register }}>
+    <AuthContext.Provider value={{ user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
